@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalMind</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --card: #1a1a1a;
+    --card2: #232323;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --text: #ececec;
+    --text-dim: #9a9a9a;
+    --border: #2a2a2a;
+    --user-bg: #1e1e2e;
+    --danger: #ef4444;
+    --sidebar-w: 260px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  #sidebar-header {
+    padding: 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  #new-chat-btn {
+    flex: 1;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  #new-chat-btn:hover { background: var(--accent-hover); }
+  .icon-btn {
+    background: var(--card2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s;
+  }
+  .icon-btn:hover { background: var(--border); }
+  #chat-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px 12px;
+  }
+  .chat-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+  .chat-item:hover { background: var(--card2); color: var(--text); }
+  .chat-item.active { background: var(--card2); color: var(--text); }
+  .chat-item .title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chat-item .del {
+    opacity: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 15px;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .chat-item:hover .del { opacity: 1; }
+  .chat-item .del:hover { color: var(--danger); background: var(--bg); }
+  #sidebar-footer {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* ---------- Main ---------- */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+  }
+  #topbar {
+    display: none;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    gap: 8px;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 0;
+  }
+  .msg-row { width: 100%; }
+  .msg-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 4px 24px 20px;
+  }
+  .msg-role {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .msg-row.user .msg-inner { display: flex; flex-direction: column; align-items: flex-end; }
+  .msg-row.user .msg-content {
+    background: var(--user-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px 16px;
+    max-width: 80%;
+    text-align: left;
+  }
+  .msg-content { word-wrap: break-word; overflow-wrap: anywhere; }
+  .msg-content p { margin: 0 0 10px; }
+  .msg-content p:last-child { margin-bottom: 0; }
+  .msg-content code.inline {
+    background: var(--card2);
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .9em;
+  }
+  .msg-content pre {
+    background: #0a0a0a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 10px 0;
+  }
+  .msg-content pre code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: #e6e6e6;
+  }
+  .msg-content strong { font-weight: 700; color: #fff; }
+  .msg-content ul, .msg-content ol { margin: 8px 0 10px 22px; }
+
+  #empty-state {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+  }
+  #empty-state h1 { font-size: 30px; color: var(--text); font-weight: 700; }
+
+  /* ---------- Composer ---------- */
+  #composer {
+    border-top: 1px solid var(--border);
+    padding: 14px 24px 18px;
+  }
+  #composer-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 8px 8px 8px 16px;
+  }
+  #composer-inner:focus-within { border-color: var(--accent); }
+  #input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    resize: none;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.5;
+    max-height: 200px;
+    padding: 8px 0;
+    outline: none;
+  }
+  #send-btn {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 18px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #send-btn:hover { background: var(--accent-hover); }
+  #send-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .composer-hint {
+    max-width: 760px;
+    margin: 6px auto 0;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  /* loading dots */
+  .loading-dots span {
+    display: inline-block;
+    width: 7px; height: 7px;
+    margin-right: 4px;
+    background: var(--text-dim);
+    border-radius: 50%;
+    animation: blink 1.2s infinite both;
+  }
+  .loading-dots span:nth-child(2) { animation-delay: .2s; }
+  .loading-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+
+  .error-msg { color: var(--danger); }
+
+  /* ---------- Modal ---------- */
+  #modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  #modal-overlay.open { display: flex; }
+  #modal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 24px;
+  }
+  #modal h2 { font-size: 20px; margin-bottom: 4px; }
+  #modal .subtitle { color: var(--text-dim); font-size: 13px; margin-bottom: 18px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 70px; }
+  .hint { font-size: 12px; color: var(--text-dim); margin-top: 5px; }
+  .warn-box {
+    background: rgba(239,68,68,.08);
+    border: 1px solid rgba(239,68,68,.3);
+    color: #fca5a5;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    margin-bottom: 18px;
+  }
+  .modal-actions { display: flex; gap: 10px; margin-top: 8px; }
+  .btn {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-primary { background: var(--accent); color: #fff; flex: 1; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid rgba(239,68,68,.4); }
+  .btn-danger:hover { background: rgba(239,68,68,.1); }
+  .modal-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+  .data-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  #storage-warning {
+    background: rgba(239,68,68,.12);
+    border-bottom: 1px solid rgba(239,68,68,.3);
+    color: #fca5a5;
+    font-size: 12px;
+    padding: 8px 16px;
+    text-align: center;
+    display: none;
+  }
+
+  /* ---------- Mobile ---------- */
+  @media (max-width: 760px) {
+    #sidebar {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      z-index: 50;
+      transform: translateX(-100%);
+      transition: transform .2s;
+      box-shadow: 2px 0 16px rgba(0,0,0,.5);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #topbar { display: flex; }
+    .msg-inner, #composer { padding-left: 14px; padding-right: 14px; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <button id="new-chat-btn">＋ 新しいチャット</button>
+      <button class="icon-btn" id="settings-btn" title="設定">⚙</button>
+    </div>
+    <div id="chat-list"></div>
+    <div id="sidebar-footer">
+      <span>LocalMind · ローカル保存</span>
+      <span id="storage-usage"></span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main id="main">
+    <div id="storage-warning"></div>
+    <div id="topbar">
+      <button class="icon-btn" id="menu-btn" title="メニュー">☰</button>
+      <strong>LocalMind</strong>
+    </div>
+    <div id="messages"></div>
+    <div id="composer">
+      <div id="composer-inner">
+        <textarea id="input" rows="1" placeholder="メッセージを入力…（Enterで送信 / Shift+Enterで改行）"></textarea>
+        <button id="send-btn" title="送信">↑</button>
+      </div>
+      <div class="composer-hint">データはすべてこのブラウザ内（localStorage）にのみ保存されます。</div>
+    </div>
+  </main>
+
+  <!-- Settings Modal -->
+  <div id="modal-overlay">
+    <div id="modal">
+      <h2>設定</h2>
+      <div class="subtitle">BYOK — あなたのAPIキーで動作します</div>
+
+      <div class="warn-box">
+        ⚠ APIキーはこのブラウザの localStorage に<strong>平文</strong>で保存されます。
+        共有端末では使用しないでください。
+      </div>
+
+      <div class="field">
+        <label for="set-key">Anthropic APIキー</label>
+        <input type="password" id="set-key" placeholder="sk-ant-..." autocomplete="off">
+        <div class="hint">console.anthropic.com で取得できます。</div>
+      </div>
+
+      <div class="field">
+        <label for="set-model">モデル</label>
+        <select id="set-model">
+          <option value="claude-haiku-4-5">claude-haiku-4-5（高速・低コスト）</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6（バランス）</option>
+          <option value="claude-opus-4-8">claude-opus-4-8（最高性能）</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="set-system">システムプロンプト（任意）</label>
+        <textarea id="set-system" placeholder="例: あなたは親切な日本語アシスタントです。"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="save-settings">保存</button>
+        <button class="btn btn-secondary" id="close-settings">閉じる</button>
+      </div>
+
+      <hr class="modal-divider">
+
+      <div class="field">
+        <label>データ管理</label>
+        <div class="hint" style="margin-bottom:10px;">すべてのデータはこの端末のみに保存されています。</div>
+        <div class="data-actions">
+          <button class="btn btn-secondary" id="export-btn">⬇ エクスポート（JSON）</button>
+          <button class="btn btn-danger" id="wipe-btn">🗑 全データを削除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   LocalMind — BYOK ローカルチャット
+   全データは localStorage のみ。将来の Tauri 移行を見据え、
+   APIキー / 資格情報まわりの処理を credentialStore に分離している。
+   ========================================================================= */
+
+/* ----------------------- ストレージキー ----------------------- */
+const KEYS = {
+  apiKey: "lm_api_key",
+  model:  "lm_model",
+  system: "lm_system",
+  chats:  "lm_chats",
+};
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+const API_URL = "https://api.anthropic.com/v1/messages";
+const MAX_TOKENS = 2048;
+const STORAGE_LIMIT = 5 * 1024 * 1024; // 約5MB
+
+/* =========================================================================
+   credentialStore — APIキー（=資格情報）の抽象化レイヤ
+   Tauri 化の際は、この実装だけを OS キーチェーン版へ差し替えればよい。
+   ========================================================================= */
+const credentialStore = {
+  getApiKey()      { return localStorage.getItem(KEYS.apiKey) || ""; },
+  setApiKey(value) {
+    if (value) localStorage.setItem(KEYS.apiKey, value);
+    else       localStorage.removeItem(KEYS.apiKey);
+  },
+  hasApiKey()      { return !!this.getApiKey(); },
+  clearApiKey()    { localStorage.removeItem(KEYS.apiKey); },
+};
+
+/* ----------------------- 設定（非機密）の読み書き ----------------------- */
+const settingsStore = {
+  getModel()  { return localStorage.getItem(KEYS.model) || DEFAULT_MODEL; },
+  setModel(m) { localStorage.setItem(KEYS.model, m); },
+  getSystem() { return localStorage.getItem(KEYS.system) || ""; },
+  setSystem(s){ localStorage.setItem(KEYS.system, s); },
+};
+
+/* ----------------------- チャットデータの読み書き ----------------------- */
+const chatStore = {
+  load() {
+    try { return JSON.parse(localStorage.getItem(KEYS.chats)) || []; }
+    catch { return []; }
+  },
+  save(chats) {
+    localStorage.setItem(KEYS.chats, JSON.stringify(chats));
+    updateStorageUsage();
+  },
+};
+
+/* ----------------------- アプリ状態 ----------------------- */
+let chats = chatStore.load();       // [{id, title, messages:[{role,content}], createdAt}]
+let activeId = null;
+let isSending = false;
+
+/* ----------------------- DOM 参照 ----------------------- */
+const $ = (id) => document.getElementById(id);
+const chatListEl = $("chat-list");
+const messagesEl = $("messages");
+const inputEl    = $("input");
+const sendBtn    = $("send-btn");
+const overlay    = $("modal-overlay");
+const sidebar    = $("sidebar");
+
+/* =========================================================================
+   ユーティリティ
+   ========================================================================= */
+function uid() {
+  return "c_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/* 簡易マークダウン：コードブロック・インラインコード・太字・改行 */
+function renderMarkdown(text) {
+  const blocks = [];
+  // ```code``` を退避
+  let t = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const i = blocks.length;
+    blocks.push(`<pre><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
+    return ` ${i} `;
+  });
+  t = escapeHtml(t);
+  t = t.replace(/`([^`\n]+)`/g, (_, c) => `<code class="inline">${c}</code>`);
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // 段落／改行
+  t = t.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+  // コードブロックを戻す
+  t = t.replace(/ (\d+) /g, (_, i) => blocks[i]);
+  return t;
+}
+
+function currentChat() {
+  return chats.find(c => c.id === activeId) || null;
+}
+
+/* =========================================================================
+   ストレージ容量チェック
+   ========================================================================= */
+function bytesUsed() {
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    total += (k.length + (localStorage.getItem(k) || "").length) * 2; // UTF-16
+  }
+  return total;
+}
+function updateStorageUsage() {
+  const used = bytesUsed();
+  const pct = used / STORAGE_LIMIT;
+  $("storage-usage").textContent = (used / 1024 / 1024).toFixed(2) + " MB";
+  const warnEl = $("storage-warning");
+  if (pct >= 0.8) {
+    warnEl.style.display = "block";
+    warnEl.textContent = `⚠ ローカル保存容量が上限（約5MB）に近づいています（${Math.round(pct*100)}%使用）。古いチャットの削除やエクスポートを検討してください。`;
+  } else {
+    warnEl.style.display = "none";
+  }
+}
+
+/* =========================================================================
+   サイドバー：チャット一覧の描画
+   ========================================================================= */
+function renderChatList() {
+  const sorted = [...chats].sort((a, b) => b.createdAt - a.createdAt);
+  chatListEl.innerHTML = "";
+  sorted.forEach(chat => {
+    const item = document.createElement("div");
+    item.className = "chat-item" + (chat.id === activeId ? " active" : "");
+    item.innerHTML = `
+      <span class="title">${escapeHtml(chat.title || "新しいチャット")}</span>
+      <button class="del" title="削除">×</button>`;
+    item.querySelector(".title").addEventListener("click", () => {
+      activeId = chat.id;
+      closeSidebarMobile();
+      render();
+    });
+    item.querySelector(".del").addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteChat(chat.id);
+    });
+    chatListEl.appendChild(item);
+  });
+}
+
+function deleteChat(id) {
+  chats = chats.filter(c => c.id !== id);
+  if (activeId === id) activeId = null;
+  chatStore.save(chats);
+  render();
+}
+
+/* =========================================================================
+   メッセージ表示
+   ========================================================================= */
+function renderMessages() {
+  const chat = currentChat();
+  messagesEl.innerHTML = "";
+
+  if (!chat) {
+    const empty = document.createElement("div");
+    empty.id = "empty-state";
+    empty.innerHTML = `
+      <h1>LocalMind</h1>
+      <p>あなたのAPIキーで動く、ローカル保存のチャット。</p>
+      <p>${credentialStore.hasApiKey()
+            ? "下の入力欄からメッセージを送ると、新しいチャットが始まります。"
+            : "まず ⚙ から Anthropic APIキー を設定してください。"}</p>`;
+    messagesEl.appendChild(empty);
+    return;
+  }
+
+  chat.messages.forEach(m => appendMessageEl(m.role, m.content));
+  scrollToBottom();
+}
+
+function appendMessageEl(role, content, opts = {}) {
+  const row = document.createElement("div");
+  row.className = "msg-row " + role;
+  const roleLabel = role === "user" ? "あなた" : "LocalMind";
+  const body = opts.loading
+    ? `<div class="loading-dots"><span></span><span></span><span></span></div>`
+    : (role === "assistant" ? renderMarkdown(content)
+                            : `<div>${escapeHtml(content).replace(/\n/g,"<br>")}</div>`);
+  row.innerHTML = `
+    <div class="msg-inner">
+      <div class="msg-role">${roleLabel}</div>
+      <div class="msg-content${opts.error ? " error-msg" : ""}">${body}</div>
+    </div>`;
+  messagesEl.appendChild(row);
+  return row;
+}
+
+function scrollToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/* =========================================================================
+   全体再描画
+   ========================================================================= */
+function render() {
+  renderChatList();
+  renderMessages();
+  updateStorageUsage();
+}
+
+/* =========================================================================
+   送信・API呼び出し
+   ========================================================================= */
+function newChat() {
+  activeId = null;
+  render();
+  inputEl.focus();
+}
+
+async function sendMessage() {
+  if (isSending) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  if (!credentialStore.hasApiKey()) {
+    openSettings();
+    flashSystemNote("APIキーが未設定です。⚙ から設定してください。");
+    return;
+  }
+
+  // 必要なら新規チャットを作成
+  let chat = currentChat();
+  if (!chat) {
+    chat = { id: uid(), title: "", messages: [], createdAt: Date.now() };
+    chats.push(chat);
+    activeId = chat.id;
+  }
+
+  // ユーザーメッセージを追加
+  chat.messages.push({ role: "user", content: text });
+  chatStore.save(chats);
+  inputEl.value = "";
+  autoGrow();
+  renderChatList();
+  if ($("empty-state")) renderMessages();
+  appendMessageEl("user", text);
+  scrollToBottom();
+
+  // ローディング表示
+  isSending = true;
+  sendBtn.disabled = true;
+  const loadingRow = appendMessageEl("assistant", "", { loading: true });
+  scrollToBottom();
+
+  try {
+    const reply = await callAnthropic(chat.messages);
+    chat.messages.push({ role: "assistant", content: reply });
+
+    // タイトル自動生成（最初のAI返答の先頭20文字）
+    if (!chat.title) {
+      chat.title = reply.replace(/\s+/g, " ").trim().slice(0, 20) || "新しいチャット";
+    }
+    chatStore.save(chats);
+
+    loadingRow.remove();
+    appendMessageEl("assistant", reply);
+    renderChatList();
+    scrollToBottom();
+  } catch (err) {
+    loadingRow.remove();
+    appendMessageEl("assistant", err.message, { error: true });
+    scrollToBottom();
+  } finally {
+    isSending = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+/* この会話の履歴のみを送信（他チャットのデータは一切含めない） */
+async function callAnthropic(messages) {
+  const apiKey = credentialStore.getApiKey();
+  const model  = settingsStore.getModel();
+  const system = settingsStore.getSystem();
+
+  const body = {
+    model,
+    max_tokens: MAX_TOKENS,
+    messages: messages.map(m => ({ role: m.role, content: m.content })),
+  };
+  if (system && system.trim()) body.system = system;
+
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (networkErr) {
+    throw new Error("ネットワークエラー: APIに接続できませんでした。接続状況を確認してください。");
+  }
+
+  if (!res.ok) {
+    let detail = "";
+    try { const j = await res.json(); detail = j.error?.message || ""; } catch {}
+    if (res.status === 401)
+      throw new Error("APIキーが無効です。設定を確認してください。");
+    if (res.status === 429)
+      throw new Error("レート制限に達しました。少し待ってから再試行してください。");
+    throw new Error(`エラー (${res.status}): ${detail || res.statusText}`);
+  }
+
+  const data = await res.json();
+  const parts = (data.content || []).filter(p => p.type === "text").map(p => p.text);
+  return parts.join("\n") || "(空の応答が返されました)";
+}
+
+/* 入力欄に一時的なシステム注記を出す（軽量） */
+function flashSystemNote(msg) {
+  inputEl.placeholder = msg;
+  setTimeout(() => {
+    inputEl.placeholder = "メッセージを入力…（Enterで送信 / Shift+Enterで改行）";
+  }, 4000);
+}
+
+/* =========================================================================
+   設定モーダル
+   ========================================================================= */
+function openSettings() {
+  $("set-key").value    = credentialStore.getApiKey();
+  $("set-model").value  = settingsStore.getModel();
+  $("set-system").value = settingsStore.getSystem();
+  overlay.classList.add("open");
+}
+function closeSettings() { overlay.classList.remove("open"); }
+
+function saveSettings() {
+  credentialStore.setApiKey($("set-key").value.trim());
+  settingsStore.setModel($("set-model").value);
+  settingsStore.setSystem($("set-system").value);
+  closeSettings();
+  render();
+}
+
+/* =========================================================================
+   データ管理：エクスポート / 全削除
+   ========================================================================= */
+function exportData() {
+  const dump = {
+    exportedAt: new Date().toISOString(),
+    app: "LocalMind",
+    model: settingsStore.getModel(),
+    system: settingsStore.getSystem(),
+    chats: chats,
+    // 注意：APIキーはセキュリティ上エクスポートに含めない
+  };
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "localmind-export-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function wipeAll() {
+  if (!confirm("すべてのチャット・設定・APIキーを完全に削除します。よろしいですか？")) return;
+  Object.values(KEYS).forEach(k => localStorage.removeItem(k));
+  chats = [];
+  activeId = null;
+  closeSettings();
+  render();
+}
+
+/* =========================================================================
+   入力欄オートグロー
+   ========================================================================= */
+function autoGrow() {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + "px";
+}
+
+/* =========================================================================
+   モバイル：サイドバー開閉
+   ========================================================================= */
+function closeSidebarMobile() { sidebar.classList.remove("open"); }
+
+/* =========================================================================
+   イベント結線
+   ========================================================================= */
+$("new-chat-btn").addEventListener("click", newChat);
+$("settings-btn").addEventListener("click", openSettings);
+$("close-settings").addEventListener("click", closeSettings);
+$("save-settings").addEventListener("click", saveSettings);
+$("export-btn").addEventListener("click", exportData);
+$("wipe-btn").addEventListener("click", wipeAll);
+$("menu-btn").addEventListener("click", () => sidebar.classList.toggle("open"));
+$("send-btn").addEventListener("click", sendMessage);
+
+overlay.addEventListener("click", (e) => { if (e.target === overlay) closeSettings(); });
+
+inputEl.addEventListener("input", autoGrow);
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+/* =========================================================================
+   起動
+   ========================================================================= */
+function init() {
+  render();
+  // 初回起動（APIキー未設定）なら設定画面を表示
+  if (!credentialStore.hasApiKey()) openSettings();
+  inputEl.focus();
+}
+init();
+</script>
+</body>
+</html>
