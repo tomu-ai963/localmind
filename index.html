@@ -20,6 +20,10 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
+  button:focus-visible, [role="button"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background: var(--bg);
@@ -109,7 +113,7 @@
     padding: 2px 4px;
     border-radius: 4px;
   }
-  .chat-item:hover .del { opacity: 1; }
+  .chat-item:hover .del, .chat-item:focus-within .del { opacity: 1; }
   .chat-item .del:hover { color: var(--danger); background: var(--bg); }
   #sidebar-footer {
     padding: 10px 14px;
@@ -396,7 +400,7 @@
   <aside id="sidebar">
     <div id="sidebar-header">
       <button id="new-chat-btn">＋ 新しいチャット</button>
-      <button class="icon-btn" id="settings-btn" title="設定">⚙</button>
+      <button class="icon-btn" id="settings-btn" title="設定" aria-label="設定を開く">⚙</button>
     </div>
     <div id="chat-list"></div>
     <div id="sidebar-footer">
@@ -409,14 +413,14 @@
   <main id="main">
     <div id="storage-warning"></div>
     <div id="topbar">
-      <button class="icon-btn" id="menu-btn" title="メニュー">☰</button>
+      <button class="icon-btn" id="menu-btn" title="メニュー" aria-label="メニューを開閉">☰</button>
       <strong>LocalMind</strong>
     </div>
     <div id="messages"></div>
     <div id="composer">
       <div id="composer-inner">
         <textarea id="input" rows="1" placeholder="メッセージを入力…（Enterで送信 / Shift+Enterで改行）"></textarea>
-        <button id="send-btn" title="送信">↑</button>
+        <button id="send-btn" title="送信" aria-label="メッセージを送信">↑</button>
       </div>
       <div class="composer-hint">データはすべてこのブラウザ内（localStorage）にのみ保存されます。</div>
     </div>
@@ -635,13 +639,22 @@ function renderChatList() {
   sorted.forEach(chat => {
     const item = document.createElement("div");
     item.className = "chat-item" + (chat.id === activeId ? " active" : "");
+    const title = chat.title || "新しいチャット";
     item.innerHTML = `
-      <span class="title">${escapeHtml(chat.title || "新しいチャット")}</span>
-      <button class="del" title="削除">×</button>`;
-    item.querySelector(".title").addEventListener("click", () => {
+      <span class="title" role="button" tabindex="0">${escapeHtml(title)}</span>
+      <button class="del" title="削除" aria-label="チャット「${escapeHtml(title)}」を削除">×</button>`;
+    const titleEl = item.querySelector(".title");
+    const openChat = () => {
       activeId = chat.id;
       closeSidebarMobile();
       render();
+    };
+    titleEl.addEventListener("click", openChat);
+    titleEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openChat();
+      }
     });
     item.querySelector(".del").addEventListener("click", (e) => {
       e.stopPropagation();
