@@ -294,6 +294,7 @@
   @keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
 
   .error-msg { color: var(--danger); }
+  .retry-note { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
 
   /* ---------- Modal ---------- */
   #modal-overlay {
@@ -489,6 +490,9 @@ const KEYS = {
 const DEFAULT_MODEL = "claude-sonnet-5";
 const API_URL = "https://api.anthropic.com/v1/messages";
 const MAX_TOKENS = 2048;
+const RETRY_MAX = 3;         // 429/5xx 時の最大再試行回数（初回リクエストを除く）
+const RETRY_BASE_MS = 1000;  // 再試行待機の基準時間（指数バックオフ）
+const RETRY_CAP_MS = 8000;   // 再試行待機の上限
 const STORAGE_LIMIT = 5 * 1024 * 1024; // 約5MB
 
 /* =========================================================================
@@ -753,7 +757,12 @@ async function sendMessage() {
   scrollToBottom();
 
   try {
-    const reply = await callAnthropic(chat.messages);
+    const reply = await callAnthropic(chat.messages, (attempt, max) => {
+      const content = loadingRow.querySelector(".msg-content");
+      content.innerHTML =
+        `<div class="loading-dots"><span></span><span></span><span></span></div>` +
+        `<div class="retry-note">一時的なエラーのため再試行しています…（${attempt}/${max}）</div>`;
+    });
     chat.messages.push({ role: "assistant", content: reply });
 
     // タイトル自動生成（最初のAI返答の先頭20文字）
@@ -777,8 +786,14 @@ async function sendMessage() {
   }
 }
 
-/* この会話の履歴のみを送信（他チャットのデータは一切含めない） */
-async function callAnthropic(messages) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/* この会話の履歴のみを送信（他チャットのデータは一切含めない）
+   429/5xx は指数バックオフ＋ジッターで最大 RETRY_MAX 回まで再試行する。
+   onRetry(attempt, max) は再試行のたびに呼ばれる（UI表示用）。 */
+async function callAnthropic(messages, onRetry) {
   const apiKey = credentialStore.getApiKey();
   const model  = settingsStore.getModel();
   const system = settingsStore.getSystem();
@@ -790,35 +805,49 @@ async function callAnthropic(messages) {
   };
   if (system && system.trim()) body.system = system;
 
-  let res;
-  try {
-    res = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (networkErr) {
-    throw new Error("ネットワークエラー: APIに接続できませんでした。接続状況を確認してください。");
-  }
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (networkErr) {
+      throw new Error("ネットワークエラー: APIに接続できませんでした。接続状況を確認してください。");
+    }
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      const parts = (data.content || []).filter(p => p.type === "text").map(p => p.text);
+      return parts.join("\n") || "(空の応答が返されました)";
+    }
+
+    // 429/5xx のみ再試行対象（400/401/403 などは即エラー）
+    const retryable = res.status === 429 || res.status >= 500;
+    if (retryable && attempt < RETRY_MAX) {
+      const base = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_CAP_MS);
+      const wait = base + Math.random() * base * 0.5; // ジッター: +0〜50%
+      if (onRetry) onRetry(attempt + 1, RETRY_MAX);
+      await sleep(wait);
+      continue;
+    }
+
     let detail = "";
     try { const j = await res.json(); detail = j.error?.message || ""; } catch {}
     if (res.status === 401)
       throw new Error("APIキーが無効です。設定を確認してください。");
     if (res.status === 429)
-      throw new Error("レート制限に達しました。少し待ってから再試行してください。");
+      throw new Error(`レート制限が続いています（${RETRY_MAX}回再試行しました）。しばらく待ってから再度お試しください。`);
+    if (res.status >= 500)
+      throw new Error(`サーバーエラー（${res.status}）が続いています（${RETRY_MAX}回再試行しました）。しばらく待ってから再度お試しください。`);
     throw new Error(`エラー (${res.status}): ${detail || res.statusText}`);
   }
-
-  const data = await res.json();
-  const parts = (data.content || []).filter(p => p.type === "text").map(p => p.text);
-  return parts.join("\n") || "(空の応答が返されました)";
 }
 
 /* 入力欄に一時的なシステム注記を出す（軽量） */
