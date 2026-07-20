@@ -187,6 +187,29 @@
     font-size: 13px;
     color: #e6e6e6;
   }
+  .code-block { position: relative; margin: 10px 0; }
+  .code-block pre { margin: 0; }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    background: var(--card2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity .15s, background .15s;
+  }
+  .code-block:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
+  .copy-btn:hover { background: var(--border); color: var(--text); }
+  .copy-btn.copied { color: #4ade80; opacity: 1; }
   .msg-content strong { font-weight: 700; color: #fff; }
   .msg-content ul, .msg-content ol { margin: 8px 0 10px 22px; }
 
@@ -535,7 +558,11 @@ function renderMarkdown(text) {
   // ```code``` を退避
   let t = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
     const i = blocks.length;
-    blocks.push(`<pre><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
+    blocks.push(
+      `<div class="code-block">` +
+      `<button class="copy-btn" type="button" aria-label="コードをコピー" title="コピー">⧉</button>` +
+      `<pre><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>` +
+      `</div>`);
     return ` ${i} `;
   });
   t = escapeHtml(t);
@@ -550,6 +577,25 @@ function renderMarkdown(text) {
 
 function currentChat() {
   return chats.find(c => c.id === activeId) || null;
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // clipboard API が使えない環境向けフォールバック
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    ta.remove();
+    return ok;
+  }
 }
 
 /* =========================================================================
@@ -856,6 +902,21 @@ $("export-btn").addEventListener("click", exportData);
 $("wipe-btn").addEventListener("click", wipeAll);
 $("menu-btn").addEventListener("click", () => sidebar.classList.toggle("open"));
 $("send-btn").addEventListener("click", sendMessage);
+
+/* コードブロックのコピー（動的生成のためイベント委譲） */
+messagesEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".copy-btn");
+  if (!btn) return;
+  const codeEl = btn.parentElement.querySelector("pre code");
+  if (!codeEl) return;
+  const ok = await copyToClipboard(codeEl.textContent);
+  btn.textContent = ok ? "✓" : "✗";
+  btn.classList.add("copied");
+  setTimeout(() => {
+    btn.textContent = "⧉";
+    btn.classList.remove("copied");
+  }, 1500);
+});
 
 overlay.addEventListener("click", (e) => { if (e.target === overlay) closeSettings(); });
 
