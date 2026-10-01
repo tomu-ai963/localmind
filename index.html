@@ -510,7 +510,7 @@ const MODEL_EFFORT = {
   "claude-opus-5-5":   "low",
 };
 const API_URL = "https://api.anthropic.com/v1/messages";
-const MAX_TOKENS = 2048;
+const MAX_TOKENS = 8192;
 const RETRY_MAX = 3;         // 429/5xx 時の最大再試行回数（初回リクエストを除く）
 const RETRY_BASE_MS = 1000;  // 再試行待機の基準時間（指数バックオフ）
 const RETRY_CAP_MS = 8000;   // 再試行待機の上限
@@ -712,7 +712,7 @@ function renderMessages() {
     return;
   }
 
-  chat.messages.forEach(m => appendMessageEl(m.role, m.content));
+  chat.messages.forEach(m => appendMessageEl(m.role, m.content, { truncated: m.truncated }));
   scrollToBottom();
 }
 
@@ -727,7 +727,8 @@ function appendMessageEl(role, content, opts = {}) {
   row.innerHTML = `
     <div class="msg-inner">
       <div class="msg-role">${roleLabel}</div>
-      <div class="msg-content${opts.error ? " error-msg" : ""}">${body}</div>
+      <div class="msg-content${opts.error ? " error-msg" : ""}">${body}</div>${opts.truncated
+        ? `<div class="retry-note">⚠ 回答が長すぎたため途中で終了しました</div>` : ""}
     </div>`;
   messagesEl.appendChild(row);
   return row;
@@ -791,13 +792,16 @@ async function sendMessage() {
   scrollToBottom();
 
   try {
-    const reply = await callAnthropic(chat.messages, (attempt, max) => {
+    const { text: reply, truncated } = await callAnthropic(chat.messages, (attempt, max) => {
       const content = loadingRow.querySelector(".msg-content");
       content.innerHTML =
         `<div class="loading-dots"><span></span><span></span><span></span></div>` +
         `<div class="retry-note">一時的なエラーのため再試行しています…（${attempt}/${max}）</div>`;
     });
-    chat.messages.push({ role: "assistant", content: reply });
+    // 途中終了の印は content に混ぜず、任意フィールドとして保存する（API には送らない）
+    const assistantMsg = { role: "assistant", content: reply };
+    if (truncated) assistantMsg.truncated = true;
+    chat.messages.push(assistantMsg);
 
     // タイトル自動生成（最初のAI返答の先頭20文字）
     if (!chat.title) {
@@ -806,7 +810,7 @@ async function sendMessage() {
     chatStore.save(chats);
 
     loadingRow.remove();
-    appendMessageEl("assistant", reply);
+    appendMessageEl("assistant", reply, { truncated });
     renderChatList();
     scrollToBottom();
   } catch (err) {
@@ -860,7 +864,10 @@ async function callAnthropic(messages, onRetry) {
     if (res.ok) {
       const data = await res.json();
       const parts = (data.content || []).filter(p => p.type === "text").map(p => p.text);
-      return parts.join("\n") || "(空の応答が返されました)";
+      return {
+        text: parts.join("\n") || "(空の応答が返されました)",
+        truncated: data.stop_reason === "max_tokens",
+      };
     }
 
     // 429/5xx のみ再試行対象（400/401/403 などは即エラー）
