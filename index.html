@@ -458,8 +458,8 @@
         <label for="set-model">モデル</label>
         <select id="set-model">
           <option value="claude-haiku-4-5">claude-haiku-4-5（高速・低コスト）</option>
-          <option value="claude-sonnet-5">claude-sonnet-5（バランス）</option>
-          <option value="claude-opus-4-8">claude-opus-4-8（最高性能）</option>
+          <option value="claude-sonnet-5-5">claude-sonnet-5-5（バランス・effort low）</option>
+          <option value="claude-opus-5-5">claude-opus-5-5（高性能・effort low）</option>
         </select>
       </div>
 
@@ -502,7 +502,13 @@ const KEYS = {
   system: "lm_system",
   chats:  "lm_chats",
 };
-const DEFAULT_MODEL = "claude-sonnet-5";
+const DEFAULT_MODEL = "claude-sonnet-5-5";
+/* output_config.effort を固定で送るモデル（コスト・速度優先）。
+   Haiku 4.5 は effort 非対応のため含めない。 */
+const MODEL_EFFORT = {
+  "claude-sonnet-5-5": "low",
+  "claude-opus-5-5":   "low",
+};
 const API_URL = "https://api.anthropic.com/v1/messages";
 const MAX_TOKENS = 2048;
 const RETRY_MAX = 3;         // 429/5xx 時の最大再試行回数（初回リクエストを除く）
@@ -832,6 +838,7 @@ async function callAnthropic(messages, onRetry) {
     messages: messages.map(m => ({ role: m.role, content: m.content })),
   };
   if (system && system.trim()) body.system = system;
+  if (MODEL_EFFORT[model]) body.output_config = { effort: MODEL_EFFORT[model] };
 
   for (let attempt = 0; ; attempt++) {
     let res;
@@ -990,7 +997,9 @@ inputEl.addEventListener("keydown", (e) => {
    ========================================================================= */
 /* 旧モデルIDが localStorage に残っている場合、新IDへ書き換える */
 const MODEL_MIGRATIONS = {
-  "claude-sonnet-4-6": "claude-sonnet-5",
+  "claude-sonnet-4-6": "claude-sonnet-5-5",
+  "claude-sonnet-5":   "claude-sonnet-5-5",
+  "claude-opus-4-8":   "claude-opus-5-5",
 };
 function migrateModelSetting() {
   const stored = localStorage.getItem(KEYS.model);
