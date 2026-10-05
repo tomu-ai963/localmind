@@ -242,7 +242,8 @@ function appendMessageEl(role, content, opts = {}) {
     <div class="msg-inner">
       <div class="msg-role">${roleLabel}</div>
       <div class="msg-content${opts.error ? " error-msg" : ""}">${body}</div>${opts.truncated
-        ? `<div class="retry-note">⚠ 回答が長すぎたため途中で終了しました</div>` : ""}
+        ? `<div class="retry-note">⚠ 回答が長すぎたため途中で終了しました</div>` : ""}${opts.unsaved
+        ? `<div class="retry-note unsaved-note">⚠ この応答は保存されていません（${escapeHtml(opts.unsaved)}）</div>` : ""}
     </div>`;
   messagesEl.appendChild(row);
   return row;
@@ -289,9 +290,16 @@ async function sendMessage() {
     activeId = chat.id;
   }
 
-  // ユーザーメッセージを追加
-  chat.messages.push({ role: "user", content: text });
-  chatStore.save(chats);
+  // ユーザーメッセージを追加。保存できなければ追加前に戻し、入力欄はそのまま残す
+  const userMsg = { role: "user", content: text };
+  chat.messages.push(userMsg);
+  const userSaveError = saveChatsOrRollback(() => discardMessage(chat, userMsg));
+  if (userSaveError) {
+    render();
+    appendMessageEl("assistant", userSaveError, { error: true });
+    scrollToBottom();
+    return;
+  }
   inputEl.value = "";
   autoGrow();
   renderChatList();
@@ -305,36 +313,78 @@ async function sendMessage() {
   const loadingRow = appendMessageEl("assistant", "", { loading: true });
   scrollToBottom();
 
+  let reply, truncated;
   try {
-    const { text: reply, truncated } = await callAnthropic(chat.messages, (attempt, max) => {
+    ({ text: reply, truncated } = await callAnthropic(chat.messages, (attempt, max) => {
       const content = loadingRow.querySelector(".msg-content");
       content.innerHTML =
         `<div class="loading-dots"><span></span><span></span><span></span></div>` +
         `<div class="retry-note">一時的なエラーのため再試行しています…（${attempt}/${max}）</div>`;
-    });
-    // 途中終了の印は content に混ぜず、任意フィールドとして保存する（API には送らない）
-    const assistantMsg = { role: "assistant", content: reply };
-    if (truncated) assistantMsg.truncated = true;
-    chat.messages.push(assistantMsg);
-
-    // タイトル自動生成（最初のAI返答の先頭20文字）
-    if (!chat.title) {
-      chat.title = reply.replace(/\s+/g, " ").trim().slice(0, 20) || "新しいチャット";
-    }
-    chatStore.save(chats);
-
-    loadingRow.remove();
-    appendMessageEl("assistant", reply, { truncated });
-    renderChatList();
-    scrollToBottom();
+    }));
   } catch (err) {
+    // 失敗したユーザーメッセージは履歴から外し（user が連続しないように）、入力欄に戻す。
+    // エラー表示は画面にだけ出し、履歴には保存しない
     loadingRow.remove();
+    discardMessage(chat, userMsg);
+    try { chatStore.save(chats); } catch {} // 削除方向の保存なので容量超過は起きない想定
+    inputEl.value = inputEl.value.trim() ? text + "\n" + inputEl.value : text;
+    autoGrow();
+    render();
     appendMessageEl("assistant", err.message, { error: true });
     scrollToBottom();
-  } finally {
-    isSending = false;
-    sendBtn.disabled = false;
-    inputEl.focus();
+    finishSending();
+    return;
+  }
+
+  // 途中終了の印は content に混ぜず、任意フィールドとして保存する（API には送らない）
+  const assistantMsg = { role: "assistant", content: reply };
+  if (truncated) assistantMsg.truncated = true;
+  chat.messages.push(assistantMsg);
+
+  // タイトル自動生成（最初のAI返答の先頭20文字）
+  const prevTitle = chat.title;
+  if (!chat.title) {
+    chat.title = reply.replace(/\s+/g, " ").trim().slice(0, 20) || "新しいチャット";
+  }
+  // 保存できなくても、料金を払って得た応答は画面に残し「未保存」と注記する
+  const replySaveError = saveChatsOrRollback(() => {
+    discardMessage(chat, assistantMsg);
+    chat.title = prevTitle;
+  });
+
+  loadingRow.remove();
+  appendMessageEl("assistant", reply, { truncated, unsaved: replySaveError });
+  renderChatList();
+  scrollToBottom();
+  finishSending();
+}
+
+function finishSending() {
+  isSending = false;
+  sendBtn.disabled = false;
+  inputEl.focus();
+}
+
+/* メッセージを履歴から外す。チャットが空になったらチャットごと削除する */
+function discardMessage(chat, msg) {
+  const i = chat.messages.lastIndexOf(msg);
+  if (i !== -1) chat.messages.splice(i, 1);
+  if (chat.messages.length === 0) {
+    chats = chats.filter(c => c !== chat);
+    if (activeId === chat.id) activeId = null;
+  }
+}
+
+/* chats を保存する。失敗したら rollback() でメモリ上の変更を戻し、表示用のエラー文を返す。
+   setItem が失敗した時点で localStorage 側は書き換わっていない。成功時は "" */
+const QUOTA_MESSAGE = "保存容量が足りません。古いチャットを削除するかエクスポートしてください";
+function saveChatsOrRollback(rollback) {
+  try {
+    chatStore.save(chats);
+    return "";
+  } catch (e) {
+    rollback();
+    return isQuotaError(e) ? QUOTA_MESSAGE : "保存に失敗しました。";
   }
 }
 
