@@ -384,6 +384,9 @@
   .btn-danger:hover { background: rgba(239,68,68,.1); }
   .modal-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
   .data-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .import-status { margin-top: 10px; }
+  .import-status:empty { display: none; }
+  .import-status.error { color: var(--danger); }
 
   #storage-warning {
     background: rgba(239,68,68,.12);
@@ -504,8 +507,11 @@
         <div class="hint" style="margin-bottom:10px;">すべてのデータはこの端末のみに保存されています。</div>
         <div class="data-actions">
           <button class="btn btn-secondary" id="export-btn">⬇ エクスポート（JSON）</button>
+          <button class="btn btn-secondary" id="import-btn" type="button">⬆ インポート（JSON）</button>
           <button class="btn btn-danger" id="wipe-btn">🗑 全データを削除</button>
         </div>
+        <input type="file" id="import-file" accept=".json,application/json" hidden>
+        <div class="hint import-status" id="import-status" role="status"></div>
       </div>
     </div>
   </div>

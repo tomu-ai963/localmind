@@ -449,6 +449,7 @@ function renderKeyStatus() {
 function openSettings() {
   $("set-key").value    = "";
   $("key-error").textContent = "";
+  setImportStatus("", false);
   renderKeyStatus();
   $("set-model").value  = settingsStore.getModel();
   $("set-system").value = settingsStore.getSystem();
@@ -479,7 +480,7 @@ function saveSettings() {
 }
 
 /* =========================================================================
-   データ管理：エクスポート / 全削除
+   データ管理：エクスポート / インポート / 全削除
    ========================================================================= */
 function exportData() {
   const dump = {
@@ -497,6 +498,134 @@ function exportData() {
   a.download = "localmind-export-" + new Date().toISOString().slice(0,10) + ".json";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* -------- インポート：エクスポートした JSON からチャットを「追加」する --------
+   取り込むのは chats だけ。model / system / APIキーはファイルにあっても無視する。
+   読み込んだオブジェクトはそのまま使わず、許可したフィールドだけで組み立て直す。 */
+const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+const IMPORT_MAX_CHATS = 1000;
+const IMPORT_MAX_MESSAGES = 1000;
+const IMPORT_MAX_TITLE = 200;
+const FORBIDDEN_KEYS = ["__proto__", "constructor", "prototype"];
+
+function setImportStatus(msg, isError) {
+  const el = $("import-status");
+  el.textContent = msg;
+  el.classList.toggle("error", !!isError);
+}
+
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/* 1件のチャットを検証し、新しいオブジェクトとして返す。不正なら null */
+function sanitizeImportedChat(raw) {
+  if (!isPlainObject(raw)) return null;
+
+  let title = "";
+  if (raw.title !== undefined && raw.title !== null) {
+    if (typeof raw.title !== "string" || raw.title.length > IMPORT_MAX_TITLE) return null;
+    title = raw.title;
+  }
+
+  const createdAt = (typeof raw.createdAt === "number" && Number.isFinite(raw.createdAt))
+    ? raw.createdAt : Date.now();
+
+  if (!Array.isArray(raw.messages) || raw.messages.length > IMPORT_MAX_MESSAGES) return null;
+  const messages = [];
+  for (const m of raw.messages) {
+    if (!isPlainObject(m)) return null;
+    if (m.role !== "user" && m.role !== "assistant") return null;
+    if (typeof m.content !== "string") return null;
+    if (m.truncated !== undefined && typeof m.truncated !== "boolean") return null;
+    const msg = { role: m.role, content: m.content };
+    if (m.truncated === true) msg.truncated = true;
+    messages.push(msg);
+  }
+
+  // id は既存チャットとの衝突を避けるため必ず振り直す
+  return { id: uid(), title, messages, createdAt };
+}
+
+/* ファイル全体を検証する。{ error } または { valid, skipped } を返す */
+function parseImportFile(text) {
+  let foundForbidden = false;
+  let root;
+  try {
+    root = JSON.parse(text, function (key, value) {
+      if (FORBIDDEN_KEYS.includes(key)) foundForbidden = true;
+      return value;
+    });
+  } catch {
+    return { error: "JSON の形式が正しくないため読み込めません。" };
+  }
+  if (foundForbidden)
+    return { error: "不正なキー（__proto__ など）を含むため読み込めません。" };
+  if (!isPlainObject(root) || root.app !== "LocalMind" || !Array.isArray(root.chats))
+    return { error: "LocalMind のエクスポートファイルではありません。" };
+  if (root.chats.length > IMPORT_MAX_CHATS)
+    return { error: `チャットが多すぎます（上限 ${IMPORT_MAX_CHATS} 件）。` };
+
+  const valid = [];
+  let skipped = 0;
+  for (const raw of root.chats) {
+    const chat = sanitizeImportedChat(raw);
+    if (chat) valid.push(chat);
+    else skipped++;
+  }
+  return { valid, skipped };
+}
+
+function isQuotaError(e) {
+  return e instanceof DOMException &&
+    (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+     e.code === 22 || e.code === 1014);
+}
+
+async function importData(file) {
+  setImportStatus("", false);
+  if (file.size > IMPORT_MAX_BYTES) {
+    setImportStatus("ファイルが大きすぎます（上限 5MB）。", true);
+    return;
+  }
+
+  let text;
+  try { text = await file.text(); }
+  catch {
+    setImportStatus("ファイルを読み込めませんでした。", true);
+    return;
+  }
+
+  const result = parseImportFile(text);
+  if (result.error) {
+    setImportStatus(result.error, true);
+    return;
+  }
+  const { valid, skipped } = result;
+  if (valid.length === 0) {
+    setImportStatus(`追加できるチャットがありません（${skipped}件スキップ）。`, true);
+    return;
+  }
+
+  const skipNote = skipped ? `（不正な${skipped}件はスキップします）` : "";
+  if (!confirm(`${valid.length}件のチャットを追加します${skipNote}。よろしいですか？`)) return;
+
+  const before = chats;
+  chats = before.concat(valid);
+  try {
+    chatStore.save(chats);
+  } catch (e) {
+    // setItem が失敗した時点で localStorage は書き換わっていない。メモリ上の状態だけ戻す
+    chats = before;
+    render();
+    setImportStatus(isQuotaError(e)
+      ? "保存容量が足りません。インポートを取り消しました。"
+      : "保存に失敗しました。インポートを取り消しました。", true);
+    return;
+  }
+  render();
+  setImportStatus(`${valid.length}件追加・${skipped}件スキップ`, false);
 }
 
 function wipeAll() {
@@ -535,6 +664,14 @@ $("clear-key-btn").addEventListener("click", () => {
   render();
 });
 $("export-btn").addEventListener("click", exportData);
+$("import-btn").addEventListener("click", () => $("import-file").click());
+$("import-file").addEventListener("change", async (e) => {
+  const input = e.target;
+  const file = input.files && input.files[0];
+  // 同じファイルを再選択しても change が発火するよう、読み込み後に空にする
+  try { if (file) await importData(file); }
+  finally { input.value = ""; }
+});
 $("wipe-btn").addEventListener("click", wipeAll);
 $("menu-btn").addEventListener("click", () => sidebar.classList.toggle("open"));
 $("send-btn").addEventListener("click", sendMessage);
