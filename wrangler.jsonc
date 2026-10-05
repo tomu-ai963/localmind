@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "localmind",
+  // ローカルの wrangler 4.91.0 のランタイムが対応する最新日付。静的配信のみなので挙動に影響しない。
+  "compatibility_date": "2026-05-18",
+
+  // Worker のコードは持たず、静的ファイル（index.html / app.js / icons 等）だけを配信する。
+  // 配信対象から外すファイルは .assetsignore に書く。
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "404-page"
+  },
+
+  // カスタムドメイン。DNS レコードと証明書は deploy 時に Cloudflare が自動で作る。
+  "routes": [
+    { "pattern": "localmind.tomu-ai.dev", "custom_domain": true }
+  ],
+  // 入口はカスタムドメインだけにする（workers.dev は使わない）。
+  "workers_dev": false
+}
