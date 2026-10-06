@@ -398,6 +398,23 @@
     display: none;
   }
 
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 96px;
+    transform: translateX(-50%);
+    z-index: 200;
+    max-width: calc(100vw - 32px);
+    background: var(--card2);
+    border: 1px solid rgba(239,68,68,.4);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  }
+  #toast[hidden] { display: none; }
+
   /* ---------- Mobile ---------- */
   @media (max-width: 760px) {
     #sidebar {
@@ -515,6 +532,8 @@
       </div>
     </div>
   </div>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="app.js"></script>
 </body>

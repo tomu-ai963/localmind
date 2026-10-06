@@ -5,9 +5,9 @@
   "compatibility_date": "2026-05-18",
 
   // Worker のコードは持たず、静的ファイル（index.html / app.js / icons 等）だけを配信する。
-  // 配信対象から外すファイルは .assetsignore に書く。
+  // 配信するのは public/ の中だけ（許可リスト方式）。テストや設定ファイルは public/ の外に置く。
   "assets": {
-    "directory": "./",
+    "directory": "./public",
     "not_found_handling": "404-page"
   },
 

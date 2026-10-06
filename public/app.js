@@ -179,6 +179,7 @@ function renderChatList() {
       activeId = chat.id;
       closeSidebarMobile();
       render();
+      restoreDraft();
     };
     titleEl.addEventListener("click", openChat);
     titleEl.addEventListener("keydown", (e) => {
@@ -201,6 +202,7 @@ function deleteChat(id) {
   const title = target.title || "新しいチャット";
   if (!confirm(`チャット「${title}」を削除しますか？この操作は取り消せません。`)) return;
   chats = chats.filter(c => c.id !== id);
+  drafts.delete(id);
   if (activeId === id) activeId = null;
   chatStore.save(chats);
   render();
@@ -243,7 +245,7 @@ function appendMessageEl(role, content, opts = {}) {
       <div class="msg-role">${roleLabel}</div>
       <div class="msg-content${opts.error ? " error-msg" : ""}">${body}</div>${opts.truncated
         ? `<div class="retry-note">⚠ 回答が長すぎたため途中で終了しました</div>` : ""}${opts.unsaved
-        ? `<div class="retry-note unsaved-note">⚠ この応答は保存されていません（${escapeHtml(opts.unsaved)}）</div>` : ""}
+        ? `<div class="retry-note unsaved-note">⚠ この質問と応答は保存されていません（${escapeHtml(opts.unsaved)}）</div>` : ""}
     </div>`;
   messagesEl.appendChild(row);
   return row;
@@ -268,7 +270,37 @@ function render() {
 function newChat() {
   activeId = null;
   render();
+  restoreDraft();
   inputEl.focus();
+}
+
+/* 送信中に別のチャットへ移っていて失敗した質問の下書き。キーはチャット id。
+   送信元のチャットが空になって消えた場合は NEW_CHAT_DRAFT（新しいチャット）に置く。
+   入力途中の文章なので localStorage には保存せず、メモリ上だけで持つ */
+const NEW_CHAT_DRAFT = "";
+const drafts = new Map();
+
+function saveDraft(key, text) {
+  const prev = drafts.get(key);
+  drafts.set(key, prev ? prev + "\n" + text : text);
+}
+
+/* いま開いているチャットに下書きがあり、入力欄が空なら戻す */
+function restoreDraft() {
+  const key = activeId ?? NEW_CHAT_DRAFT;
+  if (!drafts.has(key) || inputEl.value.trim()) return;
+  inputEl.value = drafts.get(key);
+  drafts.delete(key);
+  autoGrow();
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
 }
 
 async function sendMessage() {
@@ -322,19 +354,33 @@ async function sendMessage() {
         `<div class="retry-note">一時的なエラーのため再試行しています…（${attempt}/${max}）</div>`;
     }));
   } catch (err) {
-    // 失敗したユーザーメッセージは履歴から外し（user が連続しないように）、入力欄に戻す。
+    // 失敗したユーザーメッセージは履歴から外す（user が連続しないように）。
     // エラー表示は画面にだけ出し、履歴には保存しない
     loadingRow.remove();
+    const viewing = activeId === chat.id; // 送信中に別のチャットへ切り替えていないか
     discardMessage(chat, userMsg);
     try { chatStore.save(chats); } catch {} // 削除方向の保存なので容量超過は起きない想定
-    inputEl.value = inputEl.value.trim() ? text + "\n" + inputEl.value : text;
-    autoGrow();
-    render();
-    appendMessageEl("assistant", err.message, { error: true });
-    scrollToBottom();
+    if (viewing) {
+      // 入力欄に戻して、すぐ再送信できるようにする
+      inputEl.value = inputEl.value.trim() ? text + "\n" + inputEl.value : text;
+      autoGrow();
+      render();
+      appendMessageEl("assistant", err.message, { error: true });
+      scrollToBottom();
+    } else {
+      // 別のチャットを開いている。質問は送信元の下書きとして残し、通知だけ出す
+      const stillExists = chats.includes(chat);
+      saveDraft(stillExists ? chat.id : NEW_CHAT_DRAFT, text);
+      showToast(`『${(stillExists && chat.title) || "新しいチャット"}』への送信に失敗しました`);
+      renderChatList();
+      if (!stillExists && activeId === null) restoreDraft(); // いま開いているのが新しいチャットならすぐ戻す
+    }
     finishSending();
     return;
   }
+
+  loadingRow.remove();
+  const viewing = activeId === chat.id;
 
   // 途中終了の印は content に混ぜず、任意フィールドとして保存する（API には送らない）
   const assistantMsg = { role: "assistant", content: reply };
@@ -346,16 +392,22 @@ async function sendMessage() {
   if (!chat.title) {
     chat.title = reply.replace(/\s+/g, " ").trim().slice(0, 20) || "新しいチャット";
   }
-  // 保存できなくても、料金を払って得た応答は画面に残し「未保存」と注記する
+  // 保存できなければ質問ごと履歴から外し（次の送信で user が連続しないように）、保存し直す。
+  // 料金を払って得た応答は画面に残し「未保存」と注記する
   const replySaveError = saveChatsOrRollback(() => {
-    discardMessage(chat, assistantMsg);
     chat.title = prevTitle;
+    discardMessage(chat, assistantMsg);
+    discardMessage(chat, userMsg);
   });
+  if (replySaveError) {
+    try { chatStore.save(chats); } catch {} // 保存済みの質問を消す方向なので容量超過は起きない想定
+  }
 
-  loadingRow.remove();
-  appendMessageEl("assistant", reply, { truncated, unsaved: replySaveError });
+  if (viewing) {
+    appendMessageEl("assistant", reply, { truncated, unsaved: replySaveError });
+    scrollToBottom();
+  }
   renderChatList();
-  scrollToBottom();
   finishSending();
 }
 
@@ -682,6 +734,7 @@ function wipeAll() {
   if (!confirm("すべてのチャット・設定・APIキーを完全に削除します。よろしいですか？")) return;
   Object.values(KEYS).forEach(k => localStorage.removeItem(k));
   chats = [];
+  drafts.clear();
   activeId = null;
   closeSettings();
   render();
